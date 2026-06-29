@@ -58,13 +58,12 @@ export function QuizPlayer() {
         paddingRight: "24px",
       }}
     >
-      {/* Max width container, centered */}
       <div
         style={{
-          maxWidth: "900px",
+          maxWidth: "960px",
           margin: "0 auto",
           display: "flex",
-          gap: "24px",
+          gap: "20px",
           alignItems: "flex-start",
         }}
       >
@@ -136,7 +135,6 @@ export function QuizPlayer() {
               {question}
             </h2>
 
-            {/* Options */}
             <motion.div
               style={{
                 marginTop: "24px",
@@ -211,7 +209,6 @@ export function QuizPlayer() {
               ))}
             </motion.div>
 
-            {/* Continue Button */}
             <motion.button
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -243,7 +240,7 @@ export function QuizPlayer() {
         {/* Right Side Panel */}
         <div
           style={{
-            width: "220px",
+            width: "240px",
             flexShrink: 0,
             position: "sticky",
             top: "120px",
@@ -272,7 +269,6 @@ export function QuizPlayer() {
             <div
               style={{ display: "flex", flexDirection: "column", gap: "16px" }}
             >
-              {/* Step 1 */}
               <div
                 style={{
                   display: "flex",
@@ -309,7 +305,6 @@ export function QuizPlayer() {
                 </div>
               </div>
 
-              {/* Step 2 */}
               <div
                 style={{
                   display: "flex",
@@ -346,7 +341,6 @@ export function QuizPlayer() {
                 </div>
               </div>
 
-              {/* Step 3 */}
               <div
                 style={{
                   display: "flex",
