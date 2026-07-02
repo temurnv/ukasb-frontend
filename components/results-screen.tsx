@@ -2,20 +2,97 @@
 
 import { motion } from "framer-motion";
 import { Download, Send, Copy } from "lucide-react";
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Toast from "@/components/toast";
+import { api } from "@/lib/api";
+
+type Report = {
+  _id: string;
+  lang: string;
+  profile: { scales: Record<string, number> };
+  professions: { name: string; why: string }[];
+  recommendations: {
+    clubs: string[];
+    courses: string[];
+    school: string;
+    plan: string[];
+  };
+  pdfUrl: string;
+  status: string;
+};
+
+const barColors = [
+  "#3B82F6",
+  "#3B82F6",
+  "#60A5FA",
+  "#60A5FA",
+  "#93C5FD",
+  "#BFDBFE",
+];
 
 export function ResultsScreen() {
   const containerRef = useRef(null);
+  const router = useRouter();
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
+  const [report, setReport] = useState<Report | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState("");
 
-  const handleDownloadPdf = () => {
-    setToastMessage("PDF tayyorlanmoqda... Tez orada!");
-    setShowToast(true);
-    setTimeout(() => setShowToast(false), 3000);
-    // TODO: connect to real PDF endpoint from backend
+  useEffect(() => {
+    async function loadReport() {
+      const reportId =
+        typeof window !== "undefined"
+          ? localStorage.getItem("ukasb_report")
+          : null;
+
+      if (!reportId) {
+        router.push("/register");
+        return;
+      }
+
+      try {
+        const data = await api.getReport(reportId);
+        setReport(data);
+      } catch (err) {
+        console.error(err);
+        setError("Hisobotni yuklab bo'lmadi.");
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    loadReport();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleDownloadPdf = async () => {
+    const reportId =
+      typeof window !== "undefined"
+        ? localStorage.getItem("ukasb_report")
+        : null;
+    if (!reportId) return;
+
+    try {
+      setToastMessage("PDF tayyorlanmoqda...");
+      setShowToast(true);
+
+      const blob = await api.downloadReportPdf(reportId);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "u-kasb-hisobot.pdf";
+      a.click();
+      URL.revokeObjectURL(url);
+
+      setTimeout(() => setShowToast(false), 3000);
+    } catch (err) {
+      console.error(err);
+      setToastMessage("PDF yuklab bo'lmadi. Qaytadan urinib ko'ring.");
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 3000);
+    }
   };
 
   const handleCopyLink = () => {
@@ -26,27 +103,6 @@ export function ResultsScreen() {
     setShowToast(true);
     setTimeout(() => setShowToast(false), 3000);
   };
-
-  const strengthBars = [
-    { label: "Yetakchilik", score: 90, color: "#3B82F6" },
-    { label: "Tizimlilik", score: 83, color: "#3B82F6" },
-    { label: "Muhandislik", score: 75, color: "#60A5FA" },
-    { label: "Ijodkorlik", score: 63, color: "#93C5FD" },
-    { label: "Kommunikatsiya", score: 58, color: "#BFDBFE" },
-  ];
-
-  const careers = [
-    {
-      name: "Muhandis",
-      description: "Texnologiya va tizimlar",
-      match: "92%",
-    },
-    {
-      name: "Menejment",
-      description: "Rahbarlik va boshqaruv",
-      match: "87%",
-    },
-  ];
 
   const containerVariants = {
     hidden: { opacity: 0 },
@@ -80,6 +136,58 @@ export function ResultsScreen() {
     }),
   };
 
+  if (isLoading) {
+    return (
+      <div
+        className="min-h-screen bg-[#F5F3EE] flex items-center justify-center"
+        style={{ paddingTop: "120px" }}
+      >
+        <p style={{ fontSize: "15px", color: "#6B7280" }}>Yuklanmoqda…</p>
+      </div>
+    );
+  }
+
+  if (error || !report) {
+    return (
+      <div
+        className="min-h-screen bg-[#F5F3EE] flex items-center justify-center px-4"
+        style={{ paddingTop: "120px" }}
+      >
+        <div className="text-center">
+          <p
+            style={{ fontSize: "15px", color: "#DC2626", marginBottom: "16px" }}
+          >
+            {error || "Hisobot topilmadi."}
+          </p>
+          <Link
+            href="/"
+            style={{
+              display: "inline-block",
+              padding: "10px 24px",
+              borderRadius: "9999px",
+              backgroundColor: "#1B2D4F",
+              color: "#fff",
+              fontWeight: 700,
+              fontSize: "14px",
+            }}
+          >
+            Bosh sahifaga qaytish
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  // Build strength bars from real scales data
+  const scaleEntries = Object.entries(report.profile.scales).sort(
+    (a, b) => b[1] - a[1],
+  );
+  const strengthBars = scaleEntries.map(([label, score], idx) => ({
+    label,
+    score,
+    color: barColors[idx] || "#BFDBFE",
+  }));
+
   return (
     <motion.div
       ref={containerRef}
@@ -103,9 +211,6 @@ export function ResultsScreen() {
           <h1 className="font-[family:var(--font-heading)] text-[36px] font-bold tracking-[-0.02em] text-[#1B2D4F] mb-2">
             Kuchli tomonlar xaritasi
           </h1>
-          <p className="text-[14px] text-[#6B7280] leading-[1.75]">
-            Alisher Karimov · 14 yosh
-          </p>
         </motion.div>
 
         {/* Two Column Layout */}
@@ -121,8 +226,7 @@ export function ResultsScreen() {
           >
             <div className="space-y-5">
               {strengthBars.map((bar, idx) => (
-                <div key={idx}>
-                  {/* Label and Score */}
+                <div key={bar.label}>
                   <div className="flex justify-between items-baseline mb-2">
                     <span className="text-[14px] font-medium text-[#1B2D4F]">
                       {bar.label}
@@ -131,7 +235,6 @@ export function ResultsScreen() {
                       {bar.score}
                     </span>
                   </div>
-                  {/* Track and Fill */}
                   <div className="w-full h-2 bg-[#E8EDF5] rounded-full overflow-hidden">
                     <motion.div
                       className="h-full rounded-full"
@@ -166,25 +269,20 @@ export function ResultsScreen() {
                 Eng mos kasblar
               </label>
               <div className="space-y-3 mt-3.5">
-                {careers.map((career, idx) => (
-                  <div key={idx}>
-                    <div className="flex items-start justify-between gap-2 mb-1">
-                      <div className="flex-1">
-                        <div className="text-[15px] font-bold text-white">
-                          {career.name}
-                        </div>
-                        <div
-                          className="text-[12px] mt-0.5"
-                          style={{ color: "rgba(255, 255, 255, 0.6)" }}
-                        >
-                          {career.description}
-                        </div>
+                {report.professions.map((career, idx) => (
+                  <div key={career.name}>
+                    <div className="mb-1">
+                      <div className="text-[15px] font-bold text-white">
+                        {career.name}
                       </div>
-                      <div className="text-[15px] font-bold text-[#60A5FA] flex-shrink-0">
-                        {career.match}
+                      <div
+                        className="text-[12px] mt-0.5"
+                        style={{ color: "rgba(255, 255, 255, 0.6)" }}
+                      >
+                        {career.why}
                       </div>
                     </div>
-                    {idx < careers.length - 1 && (
+                    {idx < report.professions.length - 1 && (
                       <div
                         className="h-px mt-3"
                         style={{ backgroundColor: "rgba(255, 255, 255, 0.1)" }}

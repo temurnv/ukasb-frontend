@@ -5,34 +5,131 @@ import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { CheckCircle, Circle, HardDrive } from "lucide-react";
 import { useLanguage } from "@/lib/language-context";
+import { api } from "@/lib/api";
+
+type Question = {
+  id: string;
+  order: number;
+  type: string;
+  text: string;
+  options: { text: string; value: string }[];
+};
 
 export function QuizPlayer() {
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [questions, setQuestions] = useState<Question[]>([]);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSubmittingAnswer, setIsSubmittingAnswer] = useState(false);
+  const [error, setError] = useState("");
   const router = useRouter();
-  useLanguage();
+  const { lang } = useLanguage();
 
+  // Default letter options used if a question has no explicit options from backend
+  const defaultLetters = ["A", "B", "C", "D"];
+
+  // Load saved progress and initialize: fetch questions + start/reuse session
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("ukasb_question");
-      if (saved) setCurrentIndex(parseInt(saved));
+    async function init() {
+      try {
+        setIsLoading(true);
+        setError("");
+
+        // Restore saved question index
+        if (typeof window !== "undefined") {
+          const saved = localStorage.getItem("ukasb_question");
+          if (saved) setCurrentIndex(parseInt(saved, 10));
+        }
+
+        // Fetch real questions from backend
+        const qs = await api.getQuestions(lang);
+        setQuestions(qs);
+
+        // Reuse existing session if present, otherwise create a new one
+        let sid =
+          typeof window !== "undefined"
+            ? localStorage.getItem("ukasb_session")
+            : null;
+
+        if (!sid) {
+          const session = await api.startSession();
+          sid = session._id;
+          if (typeof window !== "undefined" && sid) {
+            localStorage.setItem("ukasb_session", sid);
+          }
+        }
+        setSessionId(sid);
+      } catch (err) {
+        console.error(err);
+        setError(
+          "Savollarni yuklab bo'lmadi. Backend ishlayotganini tekshiring.",
+        );
+      } finally {
+        setIsLoading(false);
+      }
     }
+    init();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Save current question index whenever it changes
   useEffect(() => {
     if (typeof window !== "undefined") {
       localStorage.setItem("ukasb_question", currentIndex.toString());
     }
   }, [currentIndex]);
 
-  const question =
-    "Siz yangi joyga ko'chib o'tganda nima qilishni afzal ko'rasiz?";
-  const options = [
-    { id: "A", text: "Xarita o'rganib, rejalashtiraman" },
-    { id: "B", text: "Qo'shnilar bilan tanishaman" },
-    { id: "C", text: "Uyni tartibga solaman" },
-    { id: "D", text: "Atrofni kezib, o'rganaman" },
-  ];
+  const currentQuestion = questions[currentIndex];
+  const totalQuestions = questions.length;
+  const progressPercent =
+    totalQuestions > 0
+      ? Math.round(((currentIndex + 1) / totalQuestions) * 100)
+      : 0;
+
+  // Build the option list for the current question — use backend options,
+  // pairing them with display letters A/B/C/D
+  const options =
+    currentQuestion?.options?.map((opt, i) => ({
+      id: defaultLetters[i] || String(i + 1),
+      text: opt.text,
+      value: opt.value,
+    })) || [];
+
+  const handleSelectOption = (optionId: string) => {
+    setSelectedOption(optionId);
+  };
+
+  const handleContinue = async () => {
+    if (!selectedOption || !sessionId || !currentQuestion) return;
+
+    setIsSubmittingAnswer(true);
+    setError("");
+
+    try {
+      const chosen = options.find((o) => o.id === selectedOption);
+      const value = chosen ? chosen.value : selectedOption;
+
+      // Auto-save this answer to the backend
+      await api.saveAnswers(sessionId, [
+        { questionId: currentQuestion.id, value },
+      ]);
+
+      if (currentIndex < totalQuestions - 1) {
+        setCurrentIndex((prev) => prev + 1);
+        setSelectedOption(null);
+      } else {
+        // Last question — submit the whole session for analysis
+        await api.submitSession(sessionId);
+        router.push("/analyzing");
+      }
+    } catch (err) {
+      console.error(err);
+      setError("Javobni saqlab bo'lmadi. Qaytadan urinib ko'ring.");
+    } finally {
+      setIsSubmittingAnswer(false);
+    }
+  };
 
   const containerVariants = {
     hidden: { opacity: 0 },
@@ -46,6 +143,37 @@ export function QuizPlayer() {
     hidden: { opacity: 0, y: 10 },
     visible: { opacity: 1, y: 0, transition: { duration: 0.3 } },
   };
+
+  if (isLoading) {
+    return (
+      <div
+        style={{
+          minHeight: "100vh",
+          backgroundColor: "#F5F3EE",
+          paddingTop: "160px",
+          textAlign: "center",
+        }}
+      >
+        <p style={{ fontSize: "15px", color: "#6B7280" }}>Yuklanmoqda…</p>
+      </div>
+    );
+  }
+
+  if (error && questions.length === 0) {
+    return (
+      <div
+        style={{
+          minHeight: "100vh",
+          backgroundColor: "#F5F3EE",
+          paddingTop: "160px",
+          textAlign: "center",
+          padding: "160px 24px 0",
+        }}
+      >
+        <p style={{ fontSize: "15px", color: "#DC2626" }}>{error}</p>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -80,12 +208,12 @@ export function QuizPlayer() {
               }}
             >
               <span style={{ fontSize: "13px", color: "#9CA3AF" }}>
-                8 / 20 savol
+                {currentIndex + 1} / {totalQuestions} savol
               </span>
               <span
                 style={{ fontSize: "13px", fontWeight: 700, color: "#3B82F6" }}
               >
-                40%
+                {progressPercent}%
               </span>
             </div>
             <div
@@ -104,14 +232,15 @@ export function QuizPlayer() {
                   borderRadius: "9999px",
                 }}
                 initial={{ width: 0 }}
-                animate={{ width: "40%" }}
-                transition={{ duration: 0.8, ease: "easeOut" }}
+                animate={{ width: `${progressPercent}%` }}
+                transition={{ duration: 0.5, ease: "easeOut" }}
               />
             </div>
           </div>
 
           {/* Question Card */}
           <motion.div
+            key={currentQuestion?.id}
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.4 }}
@@ -123,6 +252,22 @@ export function QuizPlayer() {
               boxShadow: "0 4px 24px rgba(0,0,0,0.08)",
             }}
           >
+            {error && (
+              <div
+                style={{
+                  marginBottom: "16px",
+                  padding: "12px 16px",
+                  borderRadius: "10px",
+                  backgroundColor: "#FEF2F2",
+                  color: "#DC2626",
+                  fontSize: "13px",
+                  fontWeight: 500,
+                }}
+              >
+                {error}
+              </div>
+            )}
+
             <h2
               style={{
                 fontSize: "18px",
@@ -132,7 +277,7 @@ export function QuizPlayer() {
                 margin: 0,
               }}
             >
-              {question}
+              {currentQuestion?.text}
             </h2>
 
             <motion.div
@@ -150,7 +295,7 @@ export function QuizPlayer() {
                 <motion.button
                   key={option.id}
                   variants={optionVariants}
-                  onClick={() => setSelectedOption(option.id)}
+                  onClick={() => handleSelectOption(option.id)}
                   style={{
                     width: "100%",
                     display: "flex",
@@ -213,8 +358,8 @@ export function QuizPlayer() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ duration: 0.3, delay: 0.3 }}
-              disabled={!selectedOption}
-              onClick={() => router.push("/analyzing")}
+              disabled={!selectedOption || isSubmittingAnswer}
+              onClick={handleContinue}
               style={{
                 marginTop: "24px",
                 width: "100%",
@@ -225,14 +370,23 @@ export function QuizPlayer() {
                 fontSize: "16px",
                 borderRadius: "9999px",
                 border: "none",
-                cursor: selectedOption ? "pointer" : "not-allowed",
-                opacity: selectedOption ? 1 : 0.5,
+                cursor:
+                  selectedOption && !isSubmittingAnswer
+                    ? "pointer"
+                    : "not-allowed",
+                opacity: selectedOption && !isSubmittingAnswer ? 1 : 0.5,
                 transition: "all 0.2s ease",
               }}
-              whileHover={selectedOption ? { backgroundColor: "#0F1B2E" } : {}}
-              whileTap={selectedOption ? { scale: 0.98 } : {}}
+              whileHover={
+                selectedOption && !isSubmittingAnswer
+                  ? { backgroundColor: "#0F1B2E" }
+                  : {}
+              }
+              whileTap={
+                selectedOption && !isSubmittingAnswer ? { scale: 0.98 } : {}
+              }
             >
-              Davom etish →
+              {isSubmittingAnswer ? "Saqlanmoqda…" : "Davom etish →"}
             </motion.button>
           </motion.div>
         </div>

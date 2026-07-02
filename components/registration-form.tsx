@@ -1,21 +1,24 @@
-'use client'
+"use client";
 
-import { useState } from 'react'
-import { motion } from 'framer-motion'
-import { useRouter } from 'next/navigation'
-import Link from 'next/link'
-import { Shield, Phone, Clock } from 'lucide-react'
-import { useLanguage } from '@/lib/language-context'
+import { useState } from "react";
+import { motion } from "framer-motion";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { Shield, Phone, Clock } from "lucide-react";
+import { useLanguage } from "@/lib/language-context";
+import { api } from "@/lib/api";
 
 export function RegistrationForm() {
-  const { lang, setLang } = useLanguage()
-  const router = useRouter()
+  const { lang, setLang } = useLanguage();
+  const router = useRouter();
   const [formData, setFormData] = useState({
-    parentName: '',
-    childName: '',
-    childAge: '',
-    phone: '',
-  })
+    parentName: "",
+    childName: "",
+    childAge: "",
+    phone: "",
+  });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState("");
 
   const translations = {
     uz: {
@@ -32,10 +35,12 @@ export function RegistrationForm() {
       selectAge: "Tanlang",
       ageUnit: "yosh",
       submit: "Davom etish →",
+      submitting: "Yuborilmoqda...",
       back: "← Orqaga",
       trust1: "Ma'lumotlar xavfsiz",
       trust2: "Telegram orqali hisobot",
       trust3: "20 daqiqa",
+      errorMsg: "Xatolik yuz berdi. Qaytadan urinib ko'ring.",
     },
     ru: {
       eyebrow: "РЕГИСТРАЦИЯ",
@@ -51,19 +56,49 @@ export function RegistrationForm() {
       selectAge: "Выберите",
       ageUnit: "лет",
       submit: "Продолжить →",
+      submitting: "Отправка...",
       back: "← Назад",
       trust1: "Данные защищены",
       trust2: "Отчет по Telegram",
       trust3: "20 минут",
+      errorMsg: "Произошла ошибка. Попробуйте снова.",
     },
-  }
+  };
 
-  const tr = translations[lang]
+  const tr = translations[lang];
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    router.push('/quiz')
-  }
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setIsSubmitting(true);
+
+    try {
+      // Step 1: get JWT token (dev login — no real Telegram needed for now)
+      const loginData = await api.devLogin(formData.parentName);
+      if (typeof window !== "undefined") {
+        localStorage.setItem("ukasb_token", loginData.token);
+        // Clear any stale session/progress from a previous attempt
+        localStorage.removeItem("ukasb_session");
+        localStorage.removeItem("ukasb_question");
+        localStorage.removeItem("ukasb_report");
+      }
+
+      // Step 2: save the full profile
+      await api.updateProfile({
+        parentName: formData.parentName,
+        childName: formData.childName,
+        childAge: parseInt(formData.childAge, 10),
+        phone: formData.phone,
+        lang,
+      });
+
+      router.push("/quiz");
+    } catch (err) {
+      console.error(err);
+      setError(tr.errorMsg);
+      setIsSubmitting(false);
+    }
+  };
 
   return (
     <motion.div
@@ -86,28 +121,28 @@ export function RegistrationForm() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4 }}
           className="bg-white rounded-3xl p-8 border border-[#EEEBE4]"
-          style={{ boxShadow: '0 4px 24px rgba(0,0,0,0.08)' }}
+          style={{ boxShadow: "0 4px 24px rgba(0,0,0,0.08)" }}
         >
           {/* Language Selector */}
           <div className="flex gap-2 mb-8">
             <button
               type="button"
-              onClick={() => setLang('uz')}
+              onClick={() => setLang("uz")}
               className={`px-4 py-2 rounded-full font-semibold text-sm transition-all duration-200 ${
-                lang === 'uz'
-                  ? 'bg-[#1B2D4F] text-white'
-                  : 'bg-white text-[#6B7280] border border-[#E0DDD6] hover:border-[#1B2D4F]'
+                lang === "uz"
+                  ? "bg-[#1B2D4F] text-white"
+                  : "bg-white text-[#6B7280] border border-[#E0DDD6] hover:border-[#1B2D4F]"
               }`}
             >
               O&apos;zbek
             </button>
             <button
               type="button"
-              onClick={() => setLang('ru')}
+              onClick={() => setLang("ru")}
               className={`px-4 py-2 rounded-full font-semibold text-sm transition-all duration-200 ${
-                lang === 'ru'
-                  ? 'bg-[#1B2D4F] text-white'
-                  : 'bg-white text-[#6B7280] border border-[#E0DDD6] hover:border-[#1B2D4F]'
+                lang === "ru"
+                  ? "bg-[#1B2D4F] text-white"
+                  : "bg-white text-[#6B7280] border border-[#E0DDD6] hover:border-[#1B2D4F]"
               }`}
             >
               Рус
@@ -115,7 +150,10 @@ export function RegistrationForm() {
           </div>
 
           {/* Eyebrow */}
-          <div className="mb-3 flex items-center pb-3" style={{ borderLeft: '2px solid #D4A017', paddingLeft: '10px' }}>
+          <div
+            className="mb-3 flex items-center pb-3"
+            style={{ borderLeft: "2px solid #D4A017", paddingLeft: "10px" }}
+          >
             <span className="text-xs font-semibold tracking-[0.12em] text-[#D4A017]">
               {tr.eyebrow}
             </span>
@@ -131,6 +169,16 @@ export function RegistrationForm() {
             {tr.subtext}
           </p>
 
+          {/* Error message */}
+          {error && (
+            <div
+              className="mb-4 px-4 py-3 rounded-lg text-sm font-medium"
+              style={{ backgroundColor: "#FEF2F2", color: "#DC2626" }}
+            >
+              {error}
+            </div>
+          )}
+
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-5">
             {/* Parent Name */}
@@ -140,6 +188,7 @@ export function RegistrationForm() {
               </label>
               <input
                 type="text"
+                required
                 placeholder={tr.parentNamePlaceholder}
                 value={formData.parentName}
                 onChange={(e) =>
@@ -156,6 +205,7 @@ export function RegistrationForm() {
               </label>
               <input
                 type="text"
+                required
                 placeholder={tr.childNamePlaceholder}
                 value={formData.childName}
                 onChange={(e) =>
@@ -171,6 +221,7 @@ export function RegistrationForm() {
                 {tr.childAge}
               </label>
               <select
+                required
                 value={formData.childAge}
                 onChange={(e) =>
                   setFormData({ ...formData, childAge: e.target.value })
@@ -193,6 +244,7 @@ export function RegistrationForm() {
               </label>
               <input
                 type="tel"
+                required
                 placeholder={tr.phonePlaceholder}
                 value={formData.phone}
                 onChange={(e) =>
@@ -205,12 +257,13 @@ export function RegistrationForm() {
             {/* Submit Button */}
             <motion.button
               type="submit"
-              whileHover={{ backgroundColor: '#0F1B2E' }}
-              whileTap={{ scale: 0.98 }}
-              className="w-full h-13 bg-[#1B2D4F] text-white font-bold rounded-full mt-6 transition-all duration-200"
-              style={{ marginTop: '28px' }}
+              disabled={isSubmitting}
+              whileHover={!isSubmitting ? { backgroundColor: "#0F1B2E" } : {}}
+              whileTap={!isSubmitting ? { scale: 0.98 } : {}}
+              className="w-full h-13 bg-[#1B2D4F] text-white font-bold rounded-full mt-6 transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed"
+              style={{ marginTop: "28px" }}
             >
-              {tr.submit}
+              {isSubmitting ? tr.submitting : tr.submit}
             </motion.button>
           </form>
 
@@ -218,19 +271,25 @@ export function RegistrationForm() {
           <div className="grid grid-cols-3 gap-4 mt-8 pt-8 border-t border-[#EEEBE4]">
             <div className="text-center">
               <Shield size={24} className="text-[#1B2D4F] mx-auto mb-2" />
-              <p className="text-xs text-[#6B7280] leading-[1.5]">{tr.trust1}</p>
+              <p className="text-xs text-[#6B7280] leading-[1.5]">
+                {tr.trust1}
+              </p>
             </div>
             <div className="text-center">
               <Phone size={24} className="text-[#1B2D4F] mx-auto mb-2" />
-              <p className="text-xs text-[#6B7280] leading-[1.5]">{tr.trust2}</p>
+              <p className="text-xs text-[#6B7280] leading-[1.5]">
+                {tr.trust2}
+              </p>
             </div>
             <div className="text-center">
               <Clock size={24} className="text-[#1B2D4F] mx-auto mb-2" />
-              <p className="text-xs text-[#6B7280] leading-[1.5]">{tr.trust3}</p>
+              <p className="text-xs text-[#6B7280] leading-[1.5]">
+                {tr.trust3}
+              </p>
             </div>
           </div>
         </motion.div>
       </div>
     </motion.div>
-  )
+  );
 }
